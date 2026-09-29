@@ -3,10 +3,12 @@
 // provider, the token is minted by a GET, and pretending otherwise would
 // teach people that this flow is one to keep.
 //
-// The IdP's URL is fixed at BUILD time rather than fetched from the server,
-// because the browser talks to the IdP directly and the server has no reason
-// to know where it is.
-const IDP = import.meta.env.VITE_IDP_URL ?? "http://127.0.0.1:7450";
+// The IdP's URL is fixed at BUILD time rather than fetched from the server.
+// The default is this origin's /idp, which is what `studiod --dev-idp-url`
+// forwards: the devkit IdP sends no CORS headers on purpose, so a browser
+// holding Studio cannot call it across origins. A build that talks to an
+// IdP directly sets VITE_IDP_URL.
+const IDP = import.meta.env.VITE_IDP_URL ?? "/idp";
 
 export const idpURL = IDP;
 
@@ -31,7 +33,7 @@ export async function mint(handle: string): Promise<string> {
   return (await resp.text()).trim();
 }
 
-const KEY = "agentd.token";
+const KEY = "studio.token";
 
 export function saveToken(t: string) { sessionStorage.setItem(KEY, t); }
 export function token(): string | null { return sessionStorage.getItem(KEY); }

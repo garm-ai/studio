@@ -4,8 +4,8 @@ import { idpURL, listPersonas, mint, saveToken, type Persona } from "../auth";
 // Login is the devkit persona picker: a list of the people the dev IdP knows,
 // one click each. No password, and none pretended.
 //
-// The picker talks to the IdP from the browser, and the IdP deliberately
-// sends no CORS headers (devkit/internal/idp/ui.go says why). When the
+// The picker talks to the IdP from the browser, and the IdP sends no CORS
+// headers on purpose (devkit/internal/idp/ui.go says why). When the
 // browser refuses the cross-origin answer, this screen says so and takes a
 // token minted at the terminal instead — the same token the picker would
 // have fetched, arriving by paste. Either way it is held in sessionStorage
@@ -55,7 +55,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
     <div className="login-screen">
       <div className="login-card">
         <div className="mark">AI</div>
-        <h1>Agent inbox</h1>
+        <h1>Studio</h1>
         <p>Pick who you are. This is the development identity provider: it mints any persona it is asked for, and there is no password because there is nothing here worth one.</p>
 
         {personas === null && <div className="count">Asking the identity provider who it knows…</div>}

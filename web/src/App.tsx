@@ -2,30 +2,43 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import * as api from "./api";
 import { signOut, token, whoAmI } from "./auth";
 import { CardView } from "./components/CardView";
-import { StateBadge } from "./components/StateBadge";
 import { Inbox } from "./screens/Inbox";
 import { Login } from "./screens/Login";
 import { Start } from "./screens/Start";
 
-// A hash router over five routes — #/, #/tasks/:id, #/runs, #/runs/:id,
-// #/start — because the bundle is served from a single handler:
-// internal/http falls back to index.html for any path, but a plain static
-// file server would not, and a URL that works from both is worth more than
-// a prettier one.
+// A hash router over five routes — #/, #/tasks/:id, #/runs,
+// #/runs/:callId[/:tool], #/start — because the bundle is served from a
+// single handler: studiod falls back to index.html for any path, but a
+// plain static file server would not, and a URL that works from both is
+// worth more than a prettier one.
+//
+// A run is addressed by the call id, because that is what a result card is
+// fetched by (spec 2026-09-29-cards-and-tasks §1.3), and by the tool whose
+// endpoint serves it, because a card endpoint belongs to a service. Studio
+// knows both when it starts a run. A run reached from another card's ref
+// arrives with the call id alone, and that page says what it cannot
+// address rather than guessing an endpoint.
 type Route =
   | { name: "inbox" }
   | { name: "task"; id: string }
   | { name: "runs" }
-  | { name: "run"; id: string }
+  | { name: "run"; callId: string; tool: string | null }
   | { name: "start" };
 
 function parse(hash: string): Route {
   const p = hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   if (p[0] === "tasks" && p[1]) return { name: "task", id: decodeURIComponent(p[1]) };
-  if (p[0] === "runs" && p[1]) return { name: "run", id: decodeURIComponent(p[1]) };
+  if (p[0] === "runs" && p[1]) {
+    return { name: "run", callId: decodeURIComponent(p[1]), tool: p[2] ? decodeURIComponent(p[2]) : null };
+  }
   if (p[0] === "runs") return { name: "runs" };
   if (p[0] === "start") return { name: "start" };
   return { name: "inbox" };
+}
+
+export function runHref(started: api.Started, tool: string): string {
+  const id = started.callId ?? started.runId;
+  return `#/runs/${encodeURIComponent(id)}/${encodeURIComponent(tool)}`;
 }
 
 function useHashRoute(): Route {
@@ -38,17 +51,56 @@ function useHashRoute(): Route {
   return route;
 }
 
+// The tool listing is fetched once per sign-in and held for the session.
+//
+// It is what a person may be offered — `ListTools {"audience": "PERSON"}`,
+// projected by garmd to this viewer (spec §2.5) — and it is also how Studio
+// addresses a card endpoint without building a path from parts it guessed.
+// A listing that failed is not an empty listing: the screens say so.
+function useTools(signedIn: boolean): { tools: api.ToolRow[] | null; error: string | null } {
+  const [tools, setTools] = useState<api.ToolRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!signedIn) { setTools(null); setError(null); return; }
+    let cancelled = false;
+    api.listTools()
+      .then((l) => { if (!cancelled) { setTools(l.tools); setError(null); } })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setTools(null);
+        setError(e instanceof Error ? e.message : "the catalogue could not be read");
+      });
+    return () => { cancelled = true; };
+  }, [signedIn]);
+  return { tools, error };
+}
+
 export function App() {
   const [signedIn, setSignedIn] = useState(() => token() !== null);
   const route = useHashRoute();
+  const { tools, error: toolsError } = useTools(signedIn);
 
-  // A 401 anywhere drops the token (api.ts) and this is what notices: the
-  // next render sees no token and shows the picker.
+  // A 401 anywhere drops the token (transport.ts) and this is what notices:
+  // the next render sees no token and shows the picker.
   const [, bump] = useState(0);
   const onUnauthenticated = useCallback(() => {
     setSignedIn(token() !== null);
     bump((n) => n + 1);
   }, []);
+
+  // The tool Start last submitted, so the hash it lands on names the
+  // service whose result card serves the run.
+  const startedFrom = useRef<string | null>(null);
+
+  const listAgents = useCallback(
+    () => api.listTools().then((l) => l.tools.filter(api.isAgent).filter(isInvoke)).catch(rethrow(onUnauthenticated)),
+    [onUnauthenticated],
+  );
+  const loadStartCard = useCallback((t: api.ToolRow) => {
+    const method = api.cardMethod(tools ?? [], t.fqn, "input_card");
+    if (!method) return Promise.reject(new api.ApiError(404, "not_found", "this tool serves no form"));
+    return api.getCard(method).catch(rethrow(onUnauthenticated));
+  }, [tools, onUnauthenticated]);
 
   if (!signedIn) {
     return <Login onSignedIn={() => { setSignedIn(true); window.location.hash = "#/"; }} />;
@@ -68,43 +120,42 @@ export function App() {
         </div>
       </nav>
       <main className="main">
+        {toolsError && <p role="alert" className="alert">{toolsError}</p>}
         {route.name === "inbox" && (
           <Inbox load={(v) => api.listTasks(v).catch(rethrow(onUnauthenticated))} />
         )}
         {route.name === "task" && (
-          <CardPage
-            key={`task:${route.id}`}
-            back={{ href: "#/", label: "Inbox" }}
-            load={() => api.getTaskCard(route.id)}
-            // POST /tasks/{id}/card is the card's form of /approve and
-            // /decline; the reload afterwards shows what the server
-            // recorded, not what the click assumed.
-            onAction={(action, inputs) => api.submitTaskCard(route.id, action, inputs)}
+          <TaskPage key={`task:${route.id}`} id={route.id} tools={tools ?? []} onUnauthenticated={onUnauthenticated} />
+        )}
+        {route.name === "runs" && <RunsPage />}
+        {route.name === "run" && (
+          <RunPage
+            key={`run:${route.callId}:${route.tool ?? ""}`}
+            callId={route.callId}
+            tool={route.tool}
+            tools={tools ?? []}
             onUnauthenticated={onUnauthenticated}
           />
         )}
-        {route.name === "runs" && <RunsPage onUnauthenticated={onUnauthenticated} />}
-        {route.name === "run" && (
-          <CardPage
-            key={`run:${route.id}`}
-            back={{ href: "#/runs", label: "Runs" }}
-            load={() => api.getRunCard(route.id)}
-            onUnauthenticated={onUnauthenticated}
-          >
-            <RunSteps id={route.id} onUnauthenticated={onUnauthenticated} />
-          </CardPage>
-        )}
         {route.name === "start" && (
           <Start
-            loadCard={(agent) => api.getStartCard(agent).catch(rethrow(onUnauthenticated))}
-            start={(agent, input) => api.startRun(agent, input).catch(rethrow(onUnauthenticated))}
-            onStarted={(runId) => { window.location.hash = `#/runs/${encodeURIComponent(runId)}`; }}
+            listAgents={listAgents}
+            loadCard={loadStartCard}
+            start={(t, input) => {
+              startedFrom.current = t.fqn;
+              return api.invoke(t.method, input).catch(rethrow(onUnauthenticated));
+            }}
+            onStarted={(s) => { window.location.hash = runHref(s, startedFrom.current ?? ""); }}
           />
         )}
       </main>
     </div>
   );
 }
+
+// An agent's row among the card endpoints of the same service: the one
+// whose method is the agent's own Invoke.
+export const isInvoke = (t: api.ToolRow) => t.method.endsWith("/Invoke");
 
 // shortWho is the rail's label for a subject: the handle without its
 // "employee:" prefix, because the rail is 76px wide and the prefix is the
@@ -126,8 +177,8 @@ function rethrow(onUnauthenticated: () => void) {
 // CardPage is the task page and the run page: one card, loaded from its
 // route, rendered by CardView, reloaded after every action and on the
 // Reload button — and on nothing else, because a card never refreshes
-// itself (spec §1.3). `children` renders inside the card, above its
-// footers: the run page's step table, which the spec keeps a table (§2.3).
+// itself. `children` renders inside the card, above its footers: the run
+// page's step table, which stays a table.
 //
 // After a successful action the card is reloaded twice: at once, and again
 // SETTLE_MS later. The first shows what the server recorded; the second
@@ -144,7 +195,7 @@ function CardPage({ back, load, onAction, onUnauthenticated, children }: {
   load: () => Promise<api.Card>;
   onAction?: (action: string, inputs: api.CardInputs) => Promise<void>;
   onUnauthenticated: () => void;
-  children?: ReactNode;
+  children?: (card: api.Card) => ReactNode;
 }) {
   const [card, setCard] = useState<api.Card | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -186,74 +237,178 @@ function CardPage({ back, load, onAction, onUnauthenticated, children }: {
       {!card && !error && <div className="count">Loading…</div>}
       {card && (
         <CardView card={card} onAction={onAction && afterAction}>
-          {children}
+          {children?.(card)}
         </CardView>
       )}
     </div>
   );
 }
 
-function RunsPage({ onUnauthenticated }: { onUnauthenticated: () => void }) {
-  const [runs, setRuns] = useState<api.RunSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    api.listRuns()
-      .then(setRuns)
-      .catch((e: unknown) => {
-        if (e instanceof api.ApiError && e.status === 401) onUnauthenticated();
-        setError(e instanceof Error ? e.message : "runs could not be listed");
-      });
-  }, [onUnauthenticated]);
+// TaskPage is one page from two cards (spec §2.3, §6).
+//
+// The tasks tool serves the frame — the values the digest is computed from,
+// the audit trail, the decision message's inputs, the actions. The target
+// tool serves its own rendering of the same material plus whatever it adds
+// at its own labels, and its body stands in for the frame's Material
+// section. When the tool's card is refused, unreachable, or does not exist,
+// the frame's Material section stands and the footer names what is missing.
+// A page is never failed because help was missing.
+function TaskPage({ id, tools, onUnauthenticated }: {
+  id: string; tools: api.ToolRow[]; onUnauthenticated: () => void;
+}) {
+  const task = useRef<api.Task | null>(null);
+
+  const load = async () => {
+    const t = await api.getTask(id).catch(rethrow(onUnauthenticated));
+    task.current = t;
+    const frame: api.Card = t.card ?? { kind: "TASK", subjectId: id, title: id };
+    const method = t.tool ? api.cardMethod(tools, t.tool, "approval_card") : null;
+    if (!method) return frame;
+    const toolCard = await api.getCard(method, { taskId: id, material: api.material(frame) }).catch(() => null);
+    return api.merge(frame, toolCard, toolCard ? undefined : `${t.tool} approval card`);
+  };
+
+  const onAction = async (action: string, inputs: api.CardInputs) => {
+    const t = task.current;
+    if (!t) throw new Error("the task is not loaded");
+    const reason = typeof inputs.reason === "string" ? inputs.reason : "";
+    const answer = decisionAnswer(inputs);
+    switch (action) {
+      case "claim": await api.claimTask(id); return;
+      case "release": await api.releaseTask(id); return;
+      case "approve": {
+        // The grant is minted by the deciding person's own client with the
+        // person's own bearer, and travels to the tasks tool in the request
+        // that carries the decision (spec §7). Studio holds it for exactly
+        // that one call and never stores it.
+        const grant = await api.approve(t.tool ?? "", t.subject ?? "", id, api.material(t.card));
+        await api.decideTask({ taskId: id, decision: "APPROVE", reason, grant, answer });
+        return;
+      }
+      case "decline": await api.decideTask({ taskId: id, decision: "DECLINE", reason }); return;
+      case "answer": await api.decideTask({ taskId: id, decision: "ANSWER", reason, answer }); return;
+      case "comment": await api.triageTask(id, "COMMENT", reason); return;
+      case "recommend_approve": await api.triageTask(id, "RECOMMEND", reason, "APPROVE"); return;
+      case "recommend_decline": await api.triageTask(id, "RECOMMEND", reason, "DECLINE"); return;
+      default:
+        throw new Error(`this version of Studio does not know the action "${action}"`);
+    }
+  };
+
+  return (
+    <CardPage
+      back={{ href: "#/", label: "Inbox" }}
+      load={load}
+      onAction={onAction}
+      onUnauthenticated={onUnauthenticated}
+    />
+  );
+}
+
+// The decision message, coerced from the card's inputs (spec §4.3).
+//
+// `reason` is on every decision and travels as its own field, so it is not
+// repeated here; a task whose decision message is the default carries no
+// answer at all. Everything else the form collected is the message, and the
+// tasks tool validates it against the descriptor the task pinned.
+export function decisionAnswer(inputs: api.CardInputs): Record<string, unknown> | undefined {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(inputs)) {
+    if (k === "reason") continue;
+    out[k] = v;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function RunsPage() {
   return (
     <div>
       <div className="topline">
         <div>
           <h2>Runs</h2>
-          <div className="sub">Runs you started. A run somebody else started, even one you approved a step of, is not listed here.</div>
+          <div className="sub">A run is opened from the task that asked about it, or from the run you just started.</div>
         </div>
         <a className="btn btn-primary" href="#/start" style={{ textDecoration: "none" }}>Start a run</a>
       </div>
-      {error && <p role="alert" className="alert">{error}</p>}
-      {runs?.length === 0 && (
-        <div className="empty-state">
-          <div className="big">No runs yet</div>
-          <div className="small">Start one from the Start screen, or through the API (POST /runs) or the governed door.</div>
+      <div className="empty-state">
+        <div className="big">No listing of your runs</div>
+        <div className="small">
+          There is no call that lists a person's runs. Until there is, this page is a way to start one.
         </div>
-      )}
-      {runs?.map((r) => (
-        <a key={r.run_id} className="panel row-btn" href={`#/runs/${encodeURIComponent(r.run_id)}`}>
-          <div className="row-head">
-            <strong className="mono">{r.agent_fqn}</strong>
-            <StateBadge state={r.state} />
-          </div>
-          <div className="kv"><span className="k">run</span><span className="mono">{r.run_id}</span></div>
-          <div className="kv"><span className="k">started</span><span>{new Date(r.started_at).toLocaleString()} · {r.door}</span></div>
-          <div className="kv"><span className="k">used</span><span>{r.steps_used} steps · {r.tool_calls_used} tool calls · {r.tokens_used} tokens</span></div>
-          {r.reason && <div className="kv"><span className="k">reason</span><span className="mono">{r.reason}</span></div>}
-        </a>
-      ))}
+      </div>
     </div>
   );
 }
 
-// RunSteps is the transcript INDEX from GET /runs/{id}: digests and the
-// ledger event id, never a body. It stays a table inside the run card
-// (spec §2.3: "the run page's step table stays a table").
+// RunPage is the agent's result card, fetched by the call id, with the step
+// table under it.
+//
+// The card endpoint belongs to the agent's own service, so the route names
+// the tool as well as the call. A run reached with the call alone says so
+// rather than picking an endpoint and hoping.
+function RunPage({ callId, tool, tools, onUnauthenticated }: {
+  callId: string; tool: string | null; tools: api.ToolRow[]; onUnauthenticated: () => void;
+}) {
+  const method = tool ? api.cardMethod(tools, tool, "result_card") : null;
+  if (!method) {
+    return (
+      <div>
+        <div className="pagebar"><a className="backlink" href="#/runs">← Runs</a></div>
+        <div className="empty-state">
+          <div className="big">This run's card cannot be addressed</div>
+          <div className="small">
+            A result card is served by the agent that ran, and nothing here names it.
+            {tool && <> The catalogue offers no result card for <span className="mono">{tool}</span>.</>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <CardPage
+      back={{ href: "#/runs", label: "Runs" }}
+      load={() => api.getCard(method, { callId }).catch(rethrow(onUnauthenticated))}
+      onUnauthenticated={onUnauthenticated}
+    >
+      {(card) => (
+        <RunSteps
+          method={getRunMethod(tools, tool!)}
+          runId={card.subjectId ?? ""}
+          onUnauthenticated={onUnauthenticated}
+        />
+      )}
+    </CardPage>
+  );
+}
+
+// GetRun is the agent's own method, on the same service as its Invoke.
+export function getRunMethod(tools: api.ToolRow[], tool: string): string | null {
+  const invoke = api.methodOf(tools, tool);
+  if (!invoke) return null;
+  const service = invoke.slice(0, invoke.lastIndexOf("/"));
+  return service ? `${service}/GetRun` : null;
+}
+
+// RunSteps is the transcript INDEX from GetRun: digests and the ledger
+// event id, never a body. It stays a table inside the run card.
 //
 // Rows are numbered 1..n in order, not by `seq`: a task step has no row
 // here, so the raw sequence skips a number and reads as a missing row. The
 // seq is on the cell's title for anybody matching against the ledger.
-function RunSteps({ id, onUnauthenticated }: { id: string; onUnauthenticated: () => void }) {
+function RunSteps({ method, runId, onUnauthenticated }: {
+  method: string | null; runId: string; onUnauthenticated: () => void;
+}) {
   const [steps, setSteps] = useState<api.Step[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    api.getRun(id)
+    if (!method || !runId) { setSteps([]); return; }
+    api.getRun(method, runId)
       .then((r) => setSteps(r.steps ?? []))
       .catch((e: unknown) => {
         if (e instanceof api.ApiError && e.status === 401) onUnauthenticated();
         setError(e instanceof Error ? e.message : "the steps could not be loaded");
       });
-  }, [id, onUnauthenticated]);
+  }, [method, runId, onUnauthenticated]);
   return (
     <div className="panel">
       <h4>Steps</h4>
@@ -268,13 +423,13 @@ function RunSteps({ id, onUnauthenticated }: { id: string; onUnauthenticated: ()
             </thead>
             <tbody>
               {steps.map((s, i) => (
-                <tr key={s.seq}>
+                <tr key={s.seq ?? i}>
                   <td className="mono" title={`seq ${s.seq}`}>{i + 1}</td>
                   <td>{s.kind}</td>
-                  <td className="mono">{s.tool_fqn ?? ""}</td>
-                  <td className="mono">{s.ledger_event_id ?? ""}</td>
-                  <td>{new Date(s.started_at).toLocaleTimeString()}</td>
-                  <td>{s.finished_at ? new Date(s.finished_at).toLocaleTimeString() : "…"}</td>
+                  <td className="mono">{s.toolFqn ?? ""}</td>
+                  <td className="mono">{s.ledgerEventId ?? ""}</td>
+                  <td>{s.startedAt ? new Date(s.startedAt).toLocaleTimeString() : ""}</td>
+                  <td>{s.finishedAt ? new Date(s.finishedAt).toLocaleTimeString() : "…"}</td>
                 </tr>
               ))}
             </tbody>

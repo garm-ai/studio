@@ -1,0 +1,38 @@
+{
+  "cards": [
+    {
+      "kind": "TASK",
+      "subjectId": "tsk_d1960dcd5d421088d02f66cf",
+      "title": "Initiate a payment",
+      "state": "OPEN",
+      "body": [
+        { "facts": { "facts": [
+          { "label": "Requested for", "value": "employee:jdoe" },
+          { "label": "Run",           "value": "01m3nd9gh2v9pahakp5jmjb4p8" },
+          { "label": "Amount",        "value": "25000" },
+          { "label": "Expires",       "value": "2026-09-29T01:58:35Z" } ] } }
+      ],
+      "actions": [],
+      "disclosure": { "withheldFields": [] },
+      "refs": [],
+      "catalogueDigest": "sha256:097b9671904ab4dde178d5c37856aa785544c1ecf895864ba254b06531671031"
+    },
+    {
+      "kind": "ASK",
+      "subjectId": "tsk_2f41a7c0bb9e4d5382aa1c07",
+      "title": "Which tier is this customer on?",
+      "state": "OPEN",
+      "body": [
+        { "facts": { "facts": [
+          { "label": "Requested for", "value": "employee:jdoe" },
+          { "label": "Run",           "value": "01m3nd9gh2v9pahakp5jmjb4p8" },
+          { "label": "Expires",       "value": "2026-09-29T02:10:00Z" } ] } }
+      ],
+      "actions": [],
+      "disclosure": { "withheldFields": [] },
+      "refs": [],
+      "catalogueDigest": "sha256:097b9671904ab4dde178d5c37856aa785544c1ecf895864ba254b06531671031"
+    }
+  ],
+  "cursor": ""
+}

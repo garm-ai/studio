@@ -1,60 +1,65 @@
 import { useEffect, useState } from "react";
 import { ApiError } from "../api";
-import type { Card, CardInputs } from "../api";
+import type { Card, CardInputs, Started, ToolRow } from "../api";
 import { CardView } from "../components/CardView";
 
-// The agents a person can start from the inbox. A constant, because agentd
-// has no agents listing today: the start card is GET /agents/{name}/card,
-// one name at a time, and nothing answers "which names?" — the persona's
-// reach is checked by that route (404 for an agent they cannot invoke), not
-// by a list. When a listing lands, this becomes a fetch and the picker
-// below stays as it is.
-export const AGENTS = ["support-assistant", "card-guardian", "concierge", "compliance-screen"];
+// What a person may start is the catalogue's answer, not Studio's.
+//
+// `ListTools {"audience": "PERSON"}` returns, per persona, the tools that
+// persona's claims reach and whose contract says a person may be offered
+// them (spec §2.5). The agents among them are the rows in the `agents` set.
+// There is no list of names in this file, and that is the point: the old
+// inbox kept one because agentd had no listing, and a hard-coded list is a
+// second place the truth is written down.
+//
+// A tool whose input card cannot be fetched is simply not offered. A 404 is
+// not an error here: a caller who could not start a tool must not learn it
+// exists from its form. Anything else IS an error — an expired session, a
+// plane that is down — and is shown as one.
+export interface Offer { tool: ToolRow; card: Card }
 
-// One agent's start card as this persona sees it. A 404 is not an error: it
-// is the server saying this persona may not start this agent (a caller who
-// could not start it must not learn it exists from its form), so the agent
-// is simply not offered. Anything else IS an error — an expired session, a
-// tool plane that is down — and is shown as one.
-type Offer = { agent: string; card: Card };
-
-export function Start({ loadCard, start, onStarted }: {
-  loadCard: (agent: string) => Promise<Card>;
-  start: (agent: string, input: CardInputs) => Promise<{ run_id: string }>;
-  onStarted: (runId: string) => void;
+export function Start({ listAgents, loadCard, start, onStarted }: {
+  listAgents: () => Promise<ToolRow[]>;
+  loadCard: (tool: ToolRow) => Promise<Card>;
+  start: (tool: ToolRow, input: CardInputs) => Promise<Started>;
+  // The started run, as garmd answered it: the run id in the body and the
+  // call id on the header, which is the CallRef its result card is fetched
+  // by (spec §1.3).
+  onStarted: (started: Started) => void;
 }) {
   const [offers, setOffers] = useState<Offer[] | null>(null);
-  const [agent, setAgent] = useState<string | null>(null);
+  const [chosen, setChosen] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setOffers(null);
-    setAgent(null);
+    setChosen(null);
     setError(null);
-    Promise.all(AGENTS.map((a) =>
-      loadCard(a).then(
-        (card): Offer | null => ({ agent: a, card }),
-        (e: unknown) => {
-          if (e instanceof ApiError && e.status === 404) return null;
-          throw e;
-        },
-      ),
-    ))
+    listAgents()
+      .then((rows) => Promise.all(rows.map((t) =>
+        loadCard(t).then(
+          (card): Offer | null => ({ tool: t, card }),
+          (e: unknown) => {
+            if (e instanceof ApiError && e.status === 404) return null;
+            throw e;
+          },
+        ),
+      )))
       .then((results) => {
         if (cancelled) return;
         const offered = results.filter((r): r is Offer => r !== null);
         setOffers(offered);
-        setAgent(offered[0]?.agent ?? null);
+        setChosen(offered[0]?.tool.fqn ?? null);
       })
       .catch((e: unknown) => {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : "the start card could not be loaded");
       });
     return () => { cancelled = true; };
-  }, [loadCard]);
+  }, [listAgents, loadCard]);
 
-  const selected = offers?.find((o) => o.agent === agent) ?? null;
+  const selected = offers?.find((o) => o.tool.fqn === chosen) ?? null;
 
   return (
     <div>
@@ -67,8 +72,9 @@ export function Start({ loadCard, start, onStarted }: {
       {offers && offers.length > 1 && (
         <div className="seg" role="tablist">
           {offers.map((o) => (
-            <button key={o.agent} className={o.agent === agent ? "active" : ""} aria-pressed={o.agent === agent} onClick={() => setAgent(o.agent)}>
-              {o.agent}
+            <button key={o.tool.fqn} className={o.tool.fqn === chosen ? "active" : ""}
+                    aria-pressed={o.tool.fqn === chosen} onClick={() => setChosen(o.tool.fqn)}>
+              {o.tool.title || o.tool.fqn}
             </button>
           ))}
         </div>
@@ -78,11 +84,10 @@ export function Start({ loadCard, start, onStarted }: {
       {offers && offers.length === 0 && <div className="count">This persona may not start any agent</div>}
       {selected && (
         <CardView
-          key={selected.agent}
+          key={selected.tool.fqn}
           card={selected.card}
           onAction={async (_action, inputs) => {
-            const r = await start(selected.agent, inputs);
-            onStarted(r.run_id);
+            onStarted(await start(selected.tool, inputs));
           }}
         />
       )}

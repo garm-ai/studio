@@ -1,0 +1,57 @@
+{
+  "catalogue_digest": "sha256:097b9671904ab4dde178d5c37856aa785544c1ecf895864ba254b06531671031",
+  "tools": [
+    {
+      "fqn": "bank.agents.v1.support_assistant",
+      "method": "/bank.agents.v1.SupportAssistant/Invoke",
+      "title": "support-assistant",
+      "description": "Answers a member of staff's question about a customer, and asks for approval before it moves money.",
+      "verb": "VERB_WRITE",
+      "approval_mode": "MODE_NONE",
+      "material_fields": [],
+      "sets": ["agents"]
+    },
+    {
+      "fqn": "bank.agents.v1.support_assistant_input_card",
+      "method": "/bank.agents.v1.SupportAssistant/InputCard",
+      "title": "support-assistant form",
+      "verb": "VERB_READ",
+      "approval_mode": "MODE_NONE",
+      "sets": ["agents"]
+    },
+    {
+      "fqn": "bank.agents.v1.support_assistant_result_card",
+      "method": "/bank.agents.v1.SupportAssistant/ResultCard",
+      "title": "support-assistant run",
+      "verb": "VERB_READ",
+      "approval_mode": "MODE_NONE",
+      "sets": ["agents"]
+    },
+    {
+      "fqn": "bank.agents.v1.card_guardian",
+      "method": "/bank.agents.v1.CardGuardian/Invoke",
+      "title": "card-guardian",
+      "description": "Blocks a card a customer says was lost or stolen.",
+      "verb": "VERB_WRITE",
+      "approval_mode": "MODE_NONE",
+      "material_fields": [],
+      "sets": ["agents"]
+    },
+    {
+      "fqn": "bank.agents.v1.card_guardian_input_card",
+      "method": "/bank.agents.v1.CardGuardian/InputCard",
+      "title": "card-guardian form",
+      "verb": "VERB_READ",
+      "approval_mode": "MODE_NONE",
+      "sets": ["agents"]
+    },
+    {
+      "fqn": "payments.v1.initiate_payment_approval_card",
+      "method": "/payments.v1.PaymentsService/InitiatePaymentApprovalCard",
+      "title": "Initiate a payment",
+      "verb": "VERB_READ",
+      "approval_mode": "MODE_NONE",
+      "sets": ["payments"]
+    }
+  ]
+}
