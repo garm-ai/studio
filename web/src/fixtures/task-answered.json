@@ -1,0 +1,34 @@
+{
+  "kind": "TASK",
+  "subjectId": "tsk_d1960dcd5d421088d02f66cf",
+  "title": "Initiate a payment",
+  "state": "ANSWERED",
+  "body": [
+    { "facts": { "facts": [
+      { "label": "Owned by", "value": "payments-platform" },
+      { "label": "Contact",  "value": "#payments-oncall" } ] } },
+    { "facts": { "facts": [
+      { "label": "amount_minor_units", "value": "25000" },
+      { "label": "beneficiary_iban",   "value": "GB29NWBK60161331926819" },
+      { "label": "currency_code",      "value": "GBP" } ] } },
+    { "facts": { "facts": [
+      { "label": "Requested for", "value": "employee:jdoe" },
+      { "label": "Run",           "value": "01m3nd9gh2v9pahakp5jmjb4p8" },
+      { "label": "Expires",       "value": "2026-09-29T01:58:35Z" } ] } },
+    { "section": { "title": "Outcome", "elements": [
+      { "facts": { "facts": [
+        { "label": "Decision",   "value": "approved" },
+        { "label": "Decided by", "value": "employee:sam" },
+        { "label": "Decided at", "value": "2026-09-29T01:45:12Z" },
+        { "label": "Reason",     "value": "the customer confirmed by phone" },
+        { "label": "Grant",      "value": "grn_01m3ndb2q4x8k7v9p2wz5r3h6c" },
+        { "label": "Step outcome", "value": "completed" } ] } } ] } },
+    { "section": { "title": "Audit trail", "elements": [
+      { "text": { "text": "created by agent:bank.agents.v1.SupportAssistant at 2026-09-29T01:43:35Z", "emphasis": "SUBTLE" } },
+      { "text": { "text": "approved by employee:sam at 2026-09-29T01:45:12Z", "emphasis": "SUBTLE" } } ] } }
+  ],
+  "actions": [],
+  "disclosure": { "withheldFields": [] },
+  "refs": [ { "kind": "RUN", "subjectId": "01m3nd9gh2v9pahakp5jmjb4p8", "title": "support-assistant run", "state": "COMPLETED" } ],
+  "catalogueDigest": "sha256:097b9671904ab4dde178d5c37856aa785544c1ecf895864ba254b06531671031"
+}

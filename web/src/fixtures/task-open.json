@@ -1,0 +1,29 @@
+{
+  "kind": "TASK",
+  "subjectId": "tsk_d1960dcd5d421088d02f66cf",
+  "title": "Initiate a payment",
+  "state": "OPEN",
+  "body": [
+    { "facts": { "facts": [
+      { "label": "Owned by", "value": "payments-platform" },
+      { "label": "Contact",  "value": "#payments-oncall" } ] } },
+    { "facts": { "facts": [
+      { "label": "amount_minor_units", "value": "25000" },
+      { "label": "beneficiary_iban",   "value": "GB29NWBK60161331926819" },
+      { "label": "currency_code",      "value": "GBP" } ] } },
+    { "facts": { "facts": [
+      { "label": "Requested for", "value": "employee:jdoe" },
+      { "label": "Run",           "value": "01m3nd9gh2v9pahakp5jmjb4p8" },
+      { "label": "Expires",       "value": "2026-09-29T01:58:35Z" } ] } },
+    { "section": { "title": "Audit trail", "elements": [
+      { "text": { "text": "created by agent:bank.agents.v1.SupportAssistant at 2026-09-29T01:43:35Z", "emphasis": "SUBTLE" } } ] } },
+    { "input": { "id": "reason", "label": "Reason", "required": true, "text": { "maxLen": 500, "multiline": true } } }
+  ],
+  "actions": [
+    { "id": "approve", "label": "Approve", "style": "POSITIVE",    "submit": { "confirmText": "Approve the payment of 25000 GBP?" } },
+    { "id": "decline", "label": "Decline", "style": "DESTRUCTIVE", "submit": {} }
+  ],
+  "disclosure": { "withheldFields": [] },
+  "refs": [ { "kind": "RUN", "subjectId": "01m3nd9gh2v9pahakp5jmjb4p8", "title": "support-assistant run", "state": "RUNNING" } ],
+  "catalogueDigest": "sha256:097b9671904ab4dde178d5c37856aa785544c1ecf895864ba254b06531671031"
+}

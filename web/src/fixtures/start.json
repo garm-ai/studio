@@ -1,0 +1,19 @@
+{
+  "kind": "START",
+  "subjectId": "support-assistant",
+  "title": "Start support-assistant",
+  "state": "OPEN",
+  "body": [
+    { "facts": { "facts": [
+      { "label": "Owned by", "value": "agent-platform" },
+      { "label": "Contact",  "value": "#agent-platform" } ] } },
+    { "input": { "id": "customer_id", "label": "The customer this run is about.", "required": true, "text": { "maxLen": 0, "multiline": false } } },
+    { "input": { "id": "request", "label": "What the member of staff is asking for, in their own words.", "required": true, "text": { "maxLen": 2000, "multiline": true } } }
+  ],
+  "actions": [
+    { "id": "start", "label": "Start", "style": "POSITIVE", "submit": {} }
+  ],
+  "disclosure": { "withheldFields": [] },
+  "refs": [],
+  "catalogueDigest": "sha256:097b9671904ab4dde178d5c37856aa785544c1ecf895864ba254b06531671031"
+}

@@ -1,0 +1,20 @@
+{
+  "kind": "RUN",
+  "subjectId": "01m3nd9gh2v9pahakp5jmjb4p8",
+  "title": "support-assistant run",
+  "state": "RUNNING",
+  "body": [
+    { "facts": { "facts": [
+      { "label": "Owned by", "value": "agent-platform" },
+      { "label": "Contact",  "value": "#agent-platform" } ] } },
+    { "facts": { "facts": [
+      { "label": "Agent",   "value": "bank.agents.v1.SupportAssistant" },
+      { "label": "Started", "value": "2026-09-29T01:43:20Z" },
+      { "label": "Steps",   "value": "3" } ] } },
+    { "text": { "text": "Waiting on a decision.", "emphasis": "SUBTLE" } }
+  ],
+  "actions": [],
+  "disclosure": { "withheldFields": [] },
+  "refs": [ { "kind": "TASK", "subjectId": "tsk_d1960dcd5d421088d02f66cf", "title": "Initiate a payment", "state": "OPEN" } ],
+  "catalogueDigest": "sha256:097b9671904ab4dde178d5c37856aa785544c1ecf895864ba254b06531671031"
+}
