@@ -15,6 +15,7 @@ package studio
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"errors"
 	"fmt"
 	"io"
@@ -25,6 +26,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/garm-ai/studio/internal/sts"
 	"github.com/garm-ai/studio/internal/ui"
 )
 
@@ -53,6 +55,24 @@ type Config struct {
 	// nothing else is. DEVELOPMENT ONLY: that provider mints any identity
 	// it is asked for. Empty disables the two routes.
 	DevIdPURL string
+
+	// The token service studiod signs an approval at, and the registered
+	// client it signs as. All three together, or none: with none, the
+	// approve route says so and the rest of Studio works, which is what a
+	// person working on the renderer wants.
+	//
+	// STSClientKey is for a caller that already holds the key — a test, or
+	// a harness running several components in one process. It wins over
+	// STSClientKeyFile, which is the path a deployment gives.
+	STSURL           string
+	STSClientID      string
+	STSClientKeyFile string
+	STSClientKey     *ecdsa.PrivateKey
+
+	// STSTokenAudience is what a client assertion's `aud` must name. Empty
+	// means the token endpoint of STSURL, which is what a deployment that
+	// has not changed it wants.
+	STSTokenAudience string
 
 	// Assets is the built bundle to serve. Nil means the one embedded in
 	// this binary, and a binary with no bundle then refuses to start.
@@ -106,6 +126,36 @@ func Serve(ctx context.Context, cfg Config) error {
 		}
 	}
 
+	// The token service, if there is one. Configured in full or not at all:
+	// two of the three is a deployment that meant to sign approvals and
+	// will find out at the first click, which is the wrong moment.
+	var signer *sts.Client
+	switch n := countSet(cfg.STSURL, cfg.STSClientID, cfg.STSClientKeyFile) +
+		boolToInt(cfg.STSClientKey != nil && cfg.STSClientKeyFile == ""); {
+	case n == 0:
+	case n < 3:
+		return &ConfigError{Flag: "--sts-url, --sts-client-id and --sts-client-key-file", Value: cfg.STSURL,
+			Reason: "configure all three or none; studiod signs an approval as a registered client"}
+	default:
+		if _, err := parseBaseURL("--sts-url", cfg.STSURL); err != nil {
+			return err
+		}
+		key := cfg.STSClientKey
+		if key == nil {
+			if key, err = sts.LoadECKey(cfg.STSClientKeyFile); err != nil {
+				return err
+			}
+		}
+		if signer, err = sts.New(sts.Config{
+			BaseURL:       cfg.STSURL,
+			ClientID:      cfg.STSClientID,
+			Key:           key,
+			TokenAudience: cfg.STSTokenAudience,
+		}); err != nil {
+			return err
+		}
+	}
+
 	assets := cfg.Assets
 	if assets == nil {
 		if assets, err = ui.Assets(); err != nil {
@@ -125,6 +175,15 @@ func Serve(ctx context.Context, cfg Config) error {
 	log.Info("studio is serving",
 		"listen", listener.Addr().String(),
 		"garmd", redactURL(cfg.GarmdURL))
+	if signer != nil {
+		// The client id, never the key: sts.Client redacts it in both
+		// String and LogValue, and this line names only what identifies
+		// this process to the token service.
+		log.Info("approvals are signed at the token service",
+			"sts", redactURL(cfg.STSURL), "client_id", cfg.STSClientID)
+	} else {
+		log.Warn("no token service is configured; " + ApprovePath + " will refuse and no approval can be signed")
+	}
 	if cfg.DevIdPURL != "" {
 		// Loud on purpose. This forwards to a provider that mints any
 		// identity it is asked for, and a deployment that turned it on by
@@ -134,7 +193,7 @@ func Serve(ctx context.Context, cfg Config) error {
 	}
 
 	srv := &http.Server{
-		Handler:           mount(api, bundleHandler(assets), devIdP),
+		Handler:           mount(api, bundleHandler(assets), approveHandler(signer, log), devIdP),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -174,4 +233,22 @@ func redactURL(raw string) string {
 		return "<unparseable url>"
 	}
 	return u.Redacted()
+}
+
+// countSet is how "all three or none" is checked without three nested ifs.
+func countSet(vs ...string) int {
+	n := 0
+	for _, v := range vs {
+		if v != "" {
+			n++
+		}
+	}
+	return n
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

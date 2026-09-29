@@ -10,15 +10,19 @@ import (
 
 // mount is the one place that decides where a request goes.
 //
-// Three destinations and no fourth. A garm method path goes to garmd,
+// Four destinations and no fifth. A garm method path goes to garmd,
 // unchanged, with the browser's bearer on it — that is the whole reason
 // this binary exists, because a browser talking to garmd across origins
-// would need CORS there and Studio would need a second origin to trust. The
-// two dev login routes go to the devkit identity provider when one is
-// configured. Everything else is the bundle.
-func mount(api, bundle, devIdP http.Handler) http.Handler {
+// would need CORS there and Studio would need a second origin to trust.
+// POST /studio/approve is the one route this process answers itself, and it
+// is here because a browser cannot hold a signing key. The two dev login
+// routes go to the devkit identity provider when one is configured.
+// Everything else is the bundle.
+func mount(api, bundle, approve, devIdP http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == ApprovePath:
+			approve.ServeHTTP(w, r)
 		case devIdP != nil && strings.HasPrefix(r.URL.Path, "/idp/"):
 			devIdP.ServeHTTP(w, r)
 		case IsAPIPath(r.URL.Path):
@@ -38,7 +42,8 @@ func mount(api, bundle, devIdP http.Handler) http.Handler {
 // is published, and nothing here has to be told.
 //
 // A bundle path never looks like that: `/index.html` is one segment and
-// `/assets/index-a1b2c3.js` is two with no dot in the first.
+// `/assets/index-a1b2c3.js` is two with no dot in the first. Neither does
+// this process's own route: `/studio/approve` has no dot either.
 func IsAPIPath(p string) bool {
 	seg := strings.Split(strings.TrimPrefix(p, "/"), "/")
 	if len(seg) != 2 || seg[0] == "" || seg[1] == "" {

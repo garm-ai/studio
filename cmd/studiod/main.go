@@ -35,11 +35,19 @@ func run(args []string, errOut *os.File) error {
 		listen    = fs.String("listen", envOr("STUDIOD_LISTEN", studio.DefaultListen), "address to serve on")
 		garmd     = fs.String("garmd", os.Getenv("STUDIOD_GARMD"), "base URL of the garm daemon every governed call is forwarded to")
 		devIdP    = fs.String("dev-idp-url", os.Getenv("STUDIOD_DEV_IDP_URL"), "DEV ONLY: base URL of the devkit identity provider; GET /idp/personas and GET /idp/token are forwarded there and nothing else is")
+		stsURL    = fs.String("sts-url", os.Getenv("STUDIOD_STS_URL"), "base URL of the token service an approval is signed at")
+		stsClient = fs.String("sts-client-id", os.Getenv("STUDIOD_STS_CLIENT_ID"), "the client id studiod is registered at the token service under")
+		stsKey    = fs.String("sts-client-key-file", os.Getenv("STUDIOD_STS_CLIENT_KEY_FILE"), "PEM file holding studiod's P-256 private key; it signs the client assertion and is never sent")
+		stsAud    = fs.String("sts-token-audience", os.Getenv("STUDIOD_STS_TOKEN_AUDIENCE"), "what a client assertion's aud must name (default: --sts-url + /token)")
 		showVer   = fs.Bool("version", false, "print the version this binary was built at")
 		verbosity = fs.String("log-level", envOr("STUDIOD_LOG_LEVEL", "info"), "debug, info, warn or error")
 	)
 	fs.Usage = func() {
-		fmt.Fprintf(errOut, "studiod serves Studio: the bundle, and a reverse proxy in front of garmd.\n\nUsage:\n  studiod --garmd http://garmd:7440 [--listen %s] [--dev-idp-url URL]\n\nFlags:\n", studio.DefaultListen)
+		fmt.Fprintf(errOut, "studiod serves Studio: the bundle, a reverse proxy in front of garmd, and\n"+
+			"POST %s, where a person's approval is signed.\n\n"+
+			"Usage:\n  studiod --garmd http://garmd:7440 [--listen %s]\n"+
+			"          [--sts-url URL --sts-client-id ID --sts-client-key-file PEM]\n"+
+			"          [--dev-idp-url URL]\n\nFlags:\n", studio.ApprovePath, studio.DefaultListen)
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -65,10 +73,14 @@ func run(args []string, errOut *os.File) error {
 	defer stop()
 
 	return studio.Serve(ctx, studio.Config{
-		Listen:    *listen,
-		GarmdURL:  *garmd,
-		DevIdPURL: *devIdP,
-		Log:       log,
+		Listen:           *listen,
+		GarmdURL:         *garmd,
+		DevIdPURL:        *devIdP,
+		STSURL:           *stsURL,
+		STSClientID:      *stsClient,
+		STSClientKeyFile: *stsKey,
+		STSTokenAudience: *stsAud,
+		Log:              log,
 	})
 }
 
