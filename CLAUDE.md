@@ -9,11 +9,16 @@ tool, §6 Studio's route table, §7 the grant, §9 the migration).
 ## The invariants
 
 - **Studio is a client.** It serves no governed method, holds no store, and
-  is not in anybody's catalogue. One credential: the signed-in person's own
-  bearer.
-- **One door.** Every card, every listing and every decision is a call to
-  garmd. Nothing here talks to agentd, to `tasksd`, or to any tool service
-  directly.
+  is not in anybody's catalogue.
+- **One door for the page.** Every card, every listing and every decision is
+  a call to garmd with the signed-in person's own bearer. The page never
+  talks to agentd, to `tasksd`, to any tool service, or to the token
+  service.
+- **`studiod` holds one credential of its own**, the client key that signs a
+  `POST /studio/approve` into a grant, because a browser cannot hold one.
+  That is the only authority this repository has, it is never the person's,
+  and it must never reach a log line: `sts.Client` redacts it in `String`
+  and `LogValue`, both on value receivers.
 - **Studio never filters.** garmd dropped what the viewer may not see before
   the answer left the door and named it in `Disclosure`. The renderer shows
   the whole card and shows that list. A line of code here that hides an
@@ -27,8 +32,9 @@ tool, §6 Studio's route table, §7 the grant, §9 the migration).
 - **Studio computes one thing:** the material map for a `TaskRef` and for
   the grant, read from the facts the tasks tool served. Getting it wrong
   wastes a click and can never buy a wrong grant.
-- **`studiod` has no business logic.** The bundle, a reverse proxy, two
-  development login routes. It knows nothing about cards.
+- **`studiod` has no business logic.** The bundle, a reverse proxy, the
+  approve route, two development login routes. It knows nothing about cards,
+  looks nothing up, and never reads the grant it passes back.
 
 ## Working here
 

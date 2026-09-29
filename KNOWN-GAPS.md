@@ -6,17 +6,24 @@
   door. The persona picker, the bearer held in `sessionStorage` and nowhere
   else, a 401 anywhere back to the picker, `CardView` with every element
   kind and every state, the queue, the start screen, the task page and the
-  run page. 43 component tests.
+  run page. 48 component and transport tests.
 - **`transport.ts`** — one base URL and one function, so the endpoints can
   land without anything above it moving. The bearer on every call; the
   ledger id and the catalogue digest read off every answer.
 - **`api.ts`** — the calls of the design's route table, typed against its
   shapes: the tool listing for a person, the card endpoints, the task
   service's seven methods, an agent's `Invoke` and `GetRun`, the grant.
-- **`studiod`** — the bundle, a reverse proxy in front of garmd, two
-  development login routes, a drain on `SIGTERM`. Exported as
-  `studio.Serve(ctx, studio.Config)`; the binary is flag parsing and a call
-  to it. Six Go tests, all through that exported entry point.
+- **`studiod`** — the bundle, a reverse proxy in front of garmd, the
+  approve route below, two development login routes, a drain on `SIGTERM`.
+  Exported as `studio.Serve(ctx, studio.Config)`; the binary is flag parsing
+  and a call to it. Thirteen Go tests, all through that exported entry point.
+- **The backend for frontend.** `studiod` is a registered client of the
+  token service with its own P-256 key, and serves `POST /studio/approve`:
+  the person's bearer arrives in the header, `studiod` passes it on as the
+  subject token with its own client assertion, and hands the grant back to
+  the page. A browser cannot hold a signing key, which is the whole reason
+  this route exists and the reason `studiod` is a server rather than a
+  static host.
 
 ## Not built, and why
 
@@ -32,20 +39,20 @@
   demo runs on. Nothing in this repository is wired into that deployment,
   on purpose: the switch is a later step and it removes the runner's routes
   in the same release.
-- **Minting the approval grant.** The design has the deciding person's own
-  client mint it at the token exchange with the person's own bearer. That
-  exchange is a different origin, sends no cross-origin headers, and
-  expects a registered client with an assertion — which a browser cannot
-  be. `studiod` does not proxy it, because its brief is the bundle and the
-  daemon. Until the exchange accepts a public client, an approval refuses
-  with a message saying it cannot be signed, and the exchange's address is
-  a build-time setting (`VITE_STS_URL`) rather than a default.
-- **Addressing a run from a link.** A result card is fetched by the call
-  that started the run; a card endpoint belongs to a service. Studio
-  therefore needs a call id and a tool, and its run route carries both. It
-  has both when it starts the run. A run reached from another card's link
-  carries one id and no tool, and that page says so. The fix is for a run
-  reference to name the service that serves its card.
+- **The grant's task binding.** `POST /studio/approve` asks the token
+  service for a grant bound to the task, which is what stops the same
+  payment asked twice from sharing one grant. The service does not read that
+  field yet, so today the binding is asked for and not enforced.
+- **`tool_fqn` on a card reference.** A run reached from a task card is
+  fetched through the tool the reference names. The field is in the design
+  and not yet in the generated code, so a reference that arrives without one
+  renders as a row rather than a link to a page that would fail. When the
+  contract ships, every reference is complete and that branch is dead code
+  worth deleting.
+- **No registered client in any deployment yet.** `studiod` can sign, but
+  nothing has registered it: there is no client id and no key for it in a
+  running token service, and no compose service runs it. The first
+  end-to-end approval needs both.
 - **The step table's source.** The design keeps the run's transcript index
   on `GetRun`. The run status message has no step list today, so the table
   reads one if it is there and says "no steps recorded yet" otherwise.
