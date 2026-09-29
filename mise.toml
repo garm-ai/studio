@@ -9,6 +9,15 @@
 go = "1.26"
 node = "22"
 
+[tasks.deps]
+description = "Install the web dependencies"
+# One task, because `npm ci` deletes and rewrites node_modules: three tasks
+# each running it in parallel over the same directory is an ENOTEMPTY that
+# looks like a broken lockfile. Everything that needs node_modules waits for
+# this and never installs for itself.
+dir = "web"
+run = "npm ci"
+
 [tasks.ui]
 description = "Build the Studio bundle into internal/ui/dist, which studiod embeds"
 # VITE_IDP_URL=/idp: the bundle this task builds is the one the binary
@@ -24,20 +33,20 @@ description = "Build the Studio bundle into internal/ui/dist, which studiod embe
 # is what studiod serves. A build for a web tier that mounts Studio
 # elsewhere exports it.
 dir = "web"
-run = """
-npm ci
-VITE_IDP_URL="${VITE_IDP_URL:-/idp}" npm run build
-"""
+wait_for = ["deps"]
+run = 'VITE_IDP_URL="${VITE_IDP_URL:-/idp}" npm run build'
 
 [tasks."ui-test"]
 description = "Run the Studio component tests (vitest)"
 dir = "web"
-run = "npm ci && npm run test -- --run"
+wait_for = ["deps"]
+run = "npm run test -- --run"
 
 [tasks."ui-typecheck"]
 description = "Typecheck the Studio sources without emitting anything"
 dir = "web"
-run = "npm ci && npx tsc --noEmit"
+wait_for = ["deps"]
+run = "npx tsc --noEmit"
 
 [tasks.build]
 description = "Build every Go package"
@@ -74,9 +83,10 @@ run = "go fmt ./..."
 [tasks.dev]
 description = "Run the Vite dev server against a studiod that is already up"
 dir = "web"
-# The dev server forwards the garm packages and /idp to studiod, so
+depends = ["deps"]
+# The dev server forwards the garm packages, /idp and /studio to studiod, so
 # `npm run dev` and the binary behave alike. STUDIOD_URL overrides where.
-run = "npm ci && npm run dev"
+run = "npm run dev"
 
 [tasks.run]
 description = "Build the bundle and serve it with studiod"
@@ -93,4 +103,4 @@ description = "Everything CI runs"
 # ui first: the Go embed test asserts the bundle it produced, and skips when
 # there is none. Running it before the Go tests is what turns that skip into
 # a check.
-depends = ["ui", "ui-typecheck", "ui-test", "lint", "build", "test"]
+depends = ["deps", "ui", "ui-typecheck", "ui-test", "lint", "build", "test"]
