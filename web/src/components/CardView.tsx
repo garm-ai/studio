@@ -95,7 +95,8 @@ export function CardView({ card, onAction, onRef, children }: {
         <div className="card-refs">
           {(card.refs ?? []).map((r, i) => (
             <div key={i} onClick={onRef ? (e) => { e.preventDefault(); onRef(r); } : undefined}>
-              <RefRow kind={r.kind} id={r.subjectId} title={r.title ?? r.subjectId ?? ""} state={r.state ?? ""} />
+              <RefRow kind={r.kind} id={r.subjectId} toolFqn={r.toolFqn}
+                      title={r.title ?? r.subjectId ?? ""} state={r.state ?? ""} />
             </div>
           ))}
         </div>

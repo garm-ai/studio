@@ -57,10 +57,12 @@ describe("CardView: the open task card", () => {
     expect(reason).toHaveAttribute("maxlength", "500");
   });
 
-  it("renders the run ref as a link to #/runs/{id} with its title and state", () => {
+  // A run's card is served by the agent that ran, so the ref names it and
+  // the link carries it: the ref alone is enough to fetch the card.
+  it("renders the run ref as a link carrying the call and the tool that serves its card", () => {
     render(<CardView card={TASK_OPEN} />);
     const link = screen.getByRole("link", { name: /support-assistant run/ });
-    expect(link).toHaveAttribute("href", "#/runs/01m3nd9gh2v9pahakp5jmjb4p8");
+    expect(link).toHaveAttribute("href", "#/runs/evt_01m3nd9ca11/bank.agents.v1.support_assistant");
     expect(within(link).getByText("running")).toHaveClass("badge");
   });
 
@@ -286,18 +288,23 @@ describe("CardView: what the server sent is text, never markup", () => {
     expect(links[0]).toHaveAttribute("href", "#/tasks/%3Cx%3E");
   });
 
-  it("URL-encodes a ref's id and links nothing for a kind it does not know", () => {
+  it("URL-encodes a ref's id and links nothing it cannot address", () => {
     const card: Card = {
       kind: "RUN", subjectId: "r", title: "Refs", state: "COMPLETED",
       refs: [
         { kind: "TASK", subjectId: "a/b c", title: "slashed", state: "OPEN" },
         { kind: "START", subjectId: "support-assistant", title: "not a link", state: "OPEN" },
+        // A run ref that names no tool: its card cannot be fetched, so the
+        // row is a row and not a link to a page that would fail.
+        { kind: "RUN", subjectId: "evt_x", title: "toolless run", state: "RUNNING" },
       ],
     };
     render(<CardView card={card} />);
     expect(screen.getByRole("link", { name: /slashed/ })).toHaveAttribute("href", "#/tasks/a%2Fb%20c");
     expect(screen.queryByRole("link", { name: /not a link/ })).not.toBeInTheDocument();
     expect(screen.getByText("not a link")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /toolless run/ })).not.toBeInTheDocument();
+    expect(screen.getByText("toolless run")).toBeInTheDocument();
   });
 
   it("lists withheld fields in a footer, and no footer when nothing was withheld", () => {

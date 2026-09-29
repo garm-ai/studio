@@ -7,17 +7,16 @@ import { Login } from "./screens/Login";
 import { Start } from "./screens/Start";
 
 // A hash router over five routes — #/, #/tasks/:id, #/runs,
-// #/runs/:callId[/:tool], #/start — because the bundle is served from a
+// #/runs/:callId/:tool, #/start — because the bundle is served from a
 // single handler: studiod falls back to index.html for any path, but a
 // plain static file server would not, and a URL that works from both is
 // worth more than a prettier one.
 //
 // A run is addressed by the call id, because that is what a result card is
-// fetched by (spec 2026-09-29-cards-and-tasks §1.3), and by the tool whose
-// endpoint serves it, because a card endpoint belongs to a service. Studio
-// knows both when it starts a run. A run reached from another card's ref
-// arrives with the call id alone, and that page says what it cannot
-// address rather than guessing an endpoint.
+// fetched by, and by the tool whose endpoint serves it, because a card
+// endpoint belongs to a service (spec 2026-09-29-cards-and-tasks §1.3).
+// Studio has both when it starts a run, and a ref to a run carries both,
+// so every link into this route is complete.
 type Route =
   | { name: "inbox" }
   | { name: "task"; id: string }
@@ -344,8 +343,10 @@ function RunsPage() {
 // table under it.
 //
 // The card endpoint belongs to the agent's own service, so the route names
-// the tool as well as the call. A run reached with the call alone says so
-// rather than picking an endpoint and hoping.
+// the tool as well as the call — from the start form when Studio ran the
+// agent, from the ref's `tool_fqn` when the run was reached from a task
+// card. The only way to arrive without an endpoint now is a catalogue that
+// serves this tool no result card, which is a refusal and not a gap.
 function RunPage({ callId, tool, tools, onUnauthenticated }: {
   callId: string; tool: string | null; tools: api.ToolRow[]; onUnauthenticated: () => void;
 }) {
@@ -354,13 +355,11 @@ function RunPage({ callId, tool, tools, onUnauthenticated }: {
     return (
       <div>
         <div className="pagebar"><a className="backlink" href="#/runs">← Runs</a></div>
-        <div className="empty-state">
-          <div className="big">This run's card cannot be addressed</div>
-          <div className="small">
-            A result card is served by the agent that ran, and nothing here names it.
-            {tool && <> The catalogue offers no result card for <span className="mono">{tool}</span>.</>}
-          </div>
-        </div>
+        <p role="alert" className="alert">
+          {tool
+            ? `the catalogue offers you no result card for ${tool}`
+            : "this link does not name the agent whose card would show the run"}
+        </p>
       </div>
     );
   }

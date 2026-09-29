@@ -24,6 +24,6 @@
     { "id": "decline", "label": "Decline", "style": "DESTRUCTIVE", "submit": {} }
   ],
   "disclosure": { "withheldFields": [] },
-  "refs": [ { "kind": "RUN", "subjectId": "01m3nd9gh2v9pahakp5jmjb4p8", "title": "support-assistant run", "state": "RUNNING" } ],
+  "refs": [ { "kind": "RUN", "subjectId": "evt_01m3nd9ca11", "toolFqn": "bank.agents.v1.support_assistant", "title": "support-assistant run", "state": "RUNNING" } ],
   "catalogueDigest": "sha256:097b9671904ab4dde178d5c37856aa785544c1ecf895864ba254b06531671031"
 }
