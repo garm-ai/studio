@@ -50,7 +50,7 @@ export default defineConfig({
       "/bank.": studiod,
       "/payments.": studiod,
       "/idp": studiod,
-      "/sts": studiod,
+      "/studio": studiod,
     },
   },
   test: {

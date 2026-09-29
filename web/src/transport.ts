@@ -15,13 +15,12 @@ import { signOut, token } from "./auth";
 
 export const garmdBase = trimSlash(import.meta.env.VITE_GARMD_URL ?? "");
 
-// The token exchange is a different server and is NOT proxied by studiod.
-// Studio calls it once, to mint the grant that travels with an approval
-// (spec §7): the person's own bearer is what the exchange sees, and no tool
-// may present it on their behalf. Unset means "no exchange configured", and
-// an approve then refuses with a message that says so rather than posting
-// into the void.
-export const stsBase = trimSlash(import.meta.env.VITE_STS_URL ?? "");
+// The one route studiod answers itself. A grant is signed by a registered
+// client of the token service, and a browser cannot hold a signing key — so
+// the page presents the person's bearer to its own origin and studiod
+// presents that bearer, with its own client assertion, to the token service
+// (spec §7). Studio never learns where that service is.
+export const APPROVE = "/studio/approve";
 
 function trimSlash(s: string): string {
   return s.replace(/\/+$/, "");
@@ -63,11 +62,11 @@ export async function rpc<T>(method: string, body: unknown = {}): Promise<Answer
   return read<T>(resp);
 }
 
-// post is the one call Studio makes that is not to garmd: the token
-// exchange's /approve. Same bearer, same refusal handling, a different
-// origin.
-export async function post<T>(base: string, route: string, body: unknown): Promise<Answer<T>> {
-  const resp = await fetch(base + route, {
+// post is the one call Studio makes that is not a garm method: studiod's
+// own approve route, on this same origin. Same bearer, same refusal shape,
+// because studiod answers in garmd's.
+export async function post<T>(route: string, body: unknown): Promise<Answer<T>> {
+  const resp = await fetch(garmdBase + route, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

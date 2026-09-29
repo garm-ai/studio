@@ -17,7 +17,7 @@
 // token exchange's /approve both take, built from the facts the tasks tool
 // served (§2.3). A Studio that got that wrong wastes a click — the digest
 // is computed from what the tasks tool stored, never from what Studio sent.
-import { ApiError, post, rpc, stsBase } from "./transport";
+import { APPROVE, ApiError, post, rpc } from "./transport";
 
 export { ApiError };
 
@@ -64,7 +64,12 @@ export interface Element {
   access?: Label;
 }
 export interface Action { id?: string; label?: string; style?: ActionStyle; submit?: { confirmText?: string } }
-export interface CardRef { kind?: CardKind; subjectId?: string; title?: string; state?: CardState }
+// A ref points at another card — a task card at its run, a run card at its
+// tasks. `toolFqn` names the service that serves it, because a kind and an
+// id are not enough to fetch a card: a `ResultCard` or an `ApprovalCard`
+// belongs to a tool. With it, any ref is enough on its own and the client
+// needs no table of its own (spec §1.3).
+export interface CardRef { kind?: CardKind; subjectId?: string; title?: string; state?: CardState; toolFqn?: string }
 export interface Card {
   kind?: CardKind; subjectId?: string; title?: string; state?: CardState;
   body?: Element[]; actions?: Action[];
@@ -238,23 +243,24 @@ export const getRun = (method: string, runId: string) =>
 
 // ---- The grant (spec §7) ------------------------------------------------
 
-// approve mints the grant an approval travels with.
+// approve asks studiod to sign this person's decision.
 //
-// The deciding person's own bearer is what the exchange sees. No tool may
-// present it: a token does not cross the hop, and a tool minting on a
-// person's behalf would make the exchange attest the tool's word instead of
-// the person's. The grant is then handed to `decide_task`, which is the
-// only thing that ever reads it back.
+// The authority exchanged is the person's: their own bearer goes on this
+// request and studiod passes it to the token service as the subject token.
+// What the page cannot supply is the other half — the proof of which
+// application is asking, which is a signature over a registered key — so
+// studiod adds it. That is the whole reason studiod is a server.
+//
+// The four fields are read off the card the tasks tool served. Studio does
+// not know what any of them mean, and neither does studiod. The grant comes
+// back for one use: it is handed to `decide_task` in the request that
+// carries the decision, and nothing keeps it.
 export interface Grant { grant: string; expires_in?: number }
 
 export async function approve(tool: string, subject: string, taskId: string, material: Record<string, string>): Promise<string> {
-  if (!stsBase) {
-    throw new ApiError(503, "no_token_exchange",
-      "this build has no token exchange configured, so an approval cannot be signed");
-  }
-  const { value } = await post<Grant>(stsBase, "/approve", { tool, subject, task_id: taskId, material });
+  const { value } = await post<Grant>(APPROVE, { task_id: taskId, tool, subject, material });
   if (!value.grant) {
-    throw new ApiError(502, "no_grant", "the token exchange answered without a grant");
+    throw new ApiError(502, "no_grant", "the approval was signed without a grant");
   }
   return value.grant;
 }
