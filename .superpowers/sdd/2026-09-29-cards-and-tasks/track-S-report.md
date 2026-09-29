@@ -1,7 +1,7 @@
 # Track S — Studio
 
 **Date:** 2026-09-29
-**Status:** done — `garm-ai/studio` exists, `main` pushed, tagged `v0.1.0`
+**Status:** done — `garm-ai/studio` exists, `main` pushed, tagged `v0.1.0` and `v0.2.0`
 **Spec:** `spec/docs/superpowers/specs/2026-09-29-cards-and-tasks-as-tools-design.md`
 (§1 vocabulary, §2 card endpoints, §2.5 audience, §3 projection, §4 the tasks
 tool, §6 Studio over garmd, §7 the STS binding, §9 the migration)
@@ -181,3 +181,112 @@ the only thing that moves when they land. Named in `README.md` and
 5. **The switch is not scheduled here.** agentd still serves its copy and the
    demo runs on it. Deleting agentd's inbox routes, `internal/card` and its
    bundle is §9 step 4 and belongs to whoever owns that release.
+
+
+---
+
+# v0.2.0 — the backend for frontend, and a ref that names its tool
+
+Both concerns from v0.1.0 came back with answers, and both were already in
+the architecture rather than gaps in it. Amended spec: §7 (`ddb14ec`) and
+§1.3 (`e680eb6`).
+
+## `studiod` mints the grant
+
+The hole was real and the fix is not a compromise. A browser cannot hold a
+signing key, so it cannot be a registered client of the token service;
+teaching that service to accept callers that hold no key would empty the
+register that says *which application* is asking. The token service's own
+diagram already has a backend for frontend calling the direct door, and
+`studiod` is that backend.
+
+- **`internal/sts`** — the client, shaped like `agentd/internal/sts`:
+  `private_key_jwt` over P-256, two-minute TTL, single-use `jti`, audience
+  defaulting to `--sts-url` + `/token`. The key is unexported and `String`
+  and `LogValue` redact it on **value** receivers, so formatting a `Client`
+  and a `*Client` both redact. 4xx and 5xx are separate errors: a caller
+  that filed a 503 as a refusal would tell a person they may not approve
+  when the truth is "try again". One dependency added, `go-jose/v4` at
+  agentd's version — hand-rolling ES256 JWS to keep the module
+  dependency-free was the wrong trade for a signing path.
+- **`POST /studio/approve`**, the only route `studiod` answers itself. The
+  person's bearer in the header becomes the subject token; `studiod` adds
+  its own assertion in the body; the grant goes straight back to the page,
+  which puts it in `DecideTask`. Nothing is looked up, stored, logged or
+  read on the way through, and the answer carries `Cache-Control: no-store`.
+- **Body carries four fields, not two.** The brief said "the task id and the
+  material map"; `/approve` also needs `tool` and `subject`. Rather than
+  have `studiod` look a task up — which would give it card knowledge and a
+  reason to call garmd — the page sends all four off the card the tasks tool
+  served. A page that sends the wrong material buys a wrong context beside
+  the right one, never a wrong grant.
+- **Flags:** `--sts-url`, `--sts-client-id`, `--sts-client-key-file`, plus
+  `--sts-token-audience` mirroring agentd's. All three or none, checked at
+  startup: two of the three is a deployment that meant to sign approvals and
+  would find out at the first click. With none, the route answers `501
+  no_token_exchange` and the rest of Studio works.
+- **`Config` gains `STSClientKey *ecdsa.PrivateKey`** beside the file path,
+  for a test or a harness that already holds one. It wins over the path.
+- Six tests, all through `Serve` against a fake token service: the assertion
+  is a signed JWT naming the registered client with the right `aud` and a
+  `jti`; the bearer is the person's; a request with no bearer never reaches
+  the service at all; an incomplete approval is refused before it leaves;
+  the upstream's `access_denied` body never reaches the browser; and a
+  deployment with no token service says so.
+
+The SPA no longer knows the token service exists: `VITE_STS_URL` is gone
+along with the refusal that stood in for it, and the call sits behind
+`transport.ts` with the rest. `api.test.ts` is new and holds what actually
+leaves the browser — the route, the bearer, the four fields, the refusal
+shown as written, the 401 — plus the material reader.
+
+`studiod` answers in garmd's `{code, message}` shape, so one branch in the
+browser still handles every refusal Studio can receive.
+
+## A `CardRef` names the tool that serves its card
+
+`tool_fqn` closes it exactly. `refHref` builds `#/runs/<call>/<tool>` from
+the ref, the run page's "cannot be addressed" state is gone, and a ref that
+arrives without a tool gets no link — the rule an unknown kind always had
+here: a row, not a link to a page that would fail. When Track G ships the
+field, that branch is dead code worth deleting.
+
+## Tests
+
+| Suite | v0.1.0 | v0.2.0 |
+|---|---|---|
+| web (vitest) | 43 | **48** (new `api.test.ts`) |
+| Go (`-race`) | 7 | **13** |
+| `tsc --noEmit`, bundle, `vet`, `gofmt` | clean | clean |
+
+One CI fix on the way: `ui`, `ui-test` and `ui-typecheck` each ran `npm ci`,
+and mise runs them in parallel — three processes deleting and rewriting one
+`node_modules` is an `ENOTEMPTY` that reads like a broken lockfile. A single
+`deps` task installs and the three wait for it. Latent since v0.1.0; it only
+bit once the suite grew enough to overlap.
+
+## What is left
+
+- The token service does not read `task_id` yet, so the binding that stops
+  the same payment asked twice from sharing a grant is asked for and not
+  enforced.
+- `tool_fqn` is in the design and not yet in the generated code.
+- **Nothing has registered `studiod` as a client anywhere**: no client id, no
+  key in a running token service, no compose service. The first end-to-end
+  approval needs all three, and that is the next thing to ask for.
+
+## Concerns
+
+1. **`studiod` now holds authority**, and that changes what this repository
+   is. It is one key, it is never the person's, and it cannot approve
+   anything on its own — the token service still refuses without a person's
+   bearer, and the tasks tool and garmd each refuse a grant from a chain
+   carrying `act`. But a repository that held nothing now holds something,
+   and the deployment story (where the key lives, who rotates it) is not
+   written down anywhere yet.
+2. **A bank's web tier is no longer a static host.** The README says so
+   plainly, but it is a real change to what "replace `studiod`" costs, and
+   anyone who read the v0.1.0 README will have the old picture.
+3. The rest of v0.1.0's concerns stand: no endpoint Studio calls exists yet,
+   the fixtures are hand-written from the spec, and there is no end-to-end
+   test because there is nothing to run one against.
