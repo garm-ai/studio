@@ -1,0 +1,96 @@
+# Toolchain and tasks for garm-ai/studio. `mise install` gets you a working
+# checkout; `mise run ci` is exactly what CI runs.
+#
+# Task names match the other garm-ai repositories on purpose: `mise run test`
+# means the same thing everywhere, so moving between repositories costs no
+# relearning.
+
+[tools]
+go = "1.26"
+node = "22"
+
+[tasks.ui]
+description = "Build the Studio bundle into internal/ui/dist, which studiod embeds"
+# VITE_IDP_URL=/idp: the bundle this task builds is the one the binary
+# embeds, and in the binary the login screen reaches the development
+# identity provider through Studio's own origin — `studiod --dev-idp-url`
+# forwards GET /idp/personas and GET /idp/token there, because that provider
+# sends no CORS headers on purpose. Vite reads VITE_* from the environment
+# at build time and bakes it in, so the address is decided here rather than
+# by the server. Without --dev-idp-url those two paths are the application
+# and the login screen offers the paste-a-token way in.
+#
+# VITE_GARMD_URL is left unset on purpose: empty means "this origin", which
+# is what studiod serves. A build for a web tier that mounts Studio
+# elsewhere exports it.
+dir = "web"
+run = """
+npm ci
+VITE_IDP_URL="${VITE_IDP_URL:-/idp}" npm run build
+"""
+
+[tasks."ui-test"]
+description = "Run the Studio component tests (vitest)"
+dir = "web"
+run = "npm ci && npm run test -- --run"
+
+[tasks."ui-typecheck"]
+description = "Typecheck the Studio sources without emitting anything"
+dir = "web"
+run = "npm ci && npx tsc --noEmit"
+
+[tasks.build]
+description = "Build every Go package"
+# wait_for, not depends: mise runs a task's dependencies in parallel, and
+# vite emptying internal/ui/dist while the compiler reads it is a flaky red.
+wait_for = ["ui"]
+run = "go build ./..."
+
+[tasks.test]
+description = "Run the Go tests"
+wait_for = ["ui"]
+# -timeout because Go's default is ten minutes, and a test waiting on a
+# server that never answers will sit there for all of it.
+run = "go test ./... -race -count=1 -timeout 120s"
+
+[tasks.lint]
+description = "Vet the Go and check its formatting"
+run = """
+set -e
+go vet ./...
+dirs=$(go list ./... | sed "s|^github.com/garm-ai/studio|.|")
+out=$(gofmt -l $dirs)
+if [ -n "$out" ]; then
+  echo "unformatted — run 'mise run fmt':" >&2
+  echo "$out" >&2
+  exit 1
+fi
+"""
+
+[tasks.fmt]
+description = "Format the Go"
+run = "go fmt ./..."
+
+[tasks.dev]
+description = "Run the Vite dev server against a studiod that is already up"
+dir = "web"
+# The dev server forwards the garm packages and /idp to studiod, so
+# `npm run dev` and the binary behave alike. STUDIOD_URL overrides where.
+run = "npm ci && npm run dev"
+
+[tasks.run]
+description = "Build the bundle and serve it with studiod"
+depends = ["ui"]
+run = """
+go run ./cmd/studiod \\
+  --garmd "${STUDIO_GARMD:-http://127.0.0.1:7440}" \\
+  --dev-idp-url "${STUDIO_DEV_IDP:-http://127.0.0.1:7450}" \\
+  --listen "${STUDIO_LISTEN:-127.0.0.1:7480}"
+"""
+
+[tasks.ci]
+description = "Everything CI runs"
+# ui first: the Go embed test asserts the bundle it produced, and skips when
+# there is none. Running it before the Go tests is what turns that skip into
+# a check.
+depends = ["ui", "ui-typecheck", "ui-test", "lint", "build", "test"]

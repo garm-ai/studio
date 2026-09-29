@@ -1,0 +1,28 @@
+# OS and editor noise.
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# mise: the committed config is the shared toolchain; the local one is for a
+# contributor pinning something for themselves.
+mise.local.toml
+.mise.local.toml
+
+# Go build output.
+bin/
+*.out
+*.test
+coverage.*
+
+# The built bundle. internal/ui/dist/.gitkeep is committed so that
+# `//go:embed all:dist` has a file to embed on a checkout that never ran npm.
+internal/ui/dist/*
+!internal/ui/dist/.gitkeep
+
+# npm
+node_modules/
+web/dist/
+npm-debug.log*

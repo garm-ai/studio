@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: jdx/mise-action@v2
+        with: { install: true, cache: true }
+      # Everything: the bundle builds, tsc is clean, the component tests
+      # pass, go vet and gofmt, the Go builds, and the Go tests run — the
+      # embed test among them, which is a real check only because the
+      # bundle was built first.
+      - run: mise run ci
